@@ -3,6 +3,7 @@ A simple and efficient benchmark to evaluate in-context recall performance of La
 
 ## Task Description
 **Task Easy:** Sentence Split & Recall: for a given paragraph (the abstract section of the paper), split the paragraph into individual sentences
+
 **Task Hard:** Sentence Split & Recall with Long Context: for a given paragraph (the abstract section of the paper) in a long document (determined by `hard_task_max_char`), split the paragraph into individual sentences
 
 ## Dataset
