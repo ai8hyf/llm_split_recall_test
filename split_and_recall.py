@@ -1,10 +1,17 @@
+import os
 import json
+
+from dotenv import load_dotenv
 from openai import OpenAI
+
+
+load_dotenv()
+
 
 eval_task = "easy" # or choose "hard" and provide the max_char parameter
 hard_task_max_char = 10000 # how many characters to provide to the model for the hard task
 
-oai_api_key = "your-oai-api-key" # if you want to use the openai api
+oai_api_key = os.getenv("OPENAI_API_KEY") # if you want to use the openai api
 oai_model = "gpt-3.5-turbo" # if you want to use the openai api
 
 local_llm_api_base = "http://localhost:8080/v1" # if you want to use the local model
