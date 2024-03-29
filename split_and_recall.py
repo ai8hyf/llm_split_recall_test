@@ -59,8 +59,7 @@ def build_easy_task_instruction(sentences):
 	instruction = "Below is the abstract section from an academic paper.\n\n"
 
 	instruction += "### The abstract: "
-	for sentence in sentences:
-		instruction += sentence + " "
+	instruction += " ".join(sentences)
 	instruction += "\n\n"
 
 	instruction += "Your task is to split the abstract into sentences. You answer can only include the sentences. Split them with newline symbol. Start each sentence with # symble. Do not try to modify the sentences. Do not add anything before or after the sentences.\n\n"
