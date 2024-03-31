@@ -9,6 +9,7 @@ from openai import OpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_anthropic import ChatAnthropic
+from langchain_fireworks import Fireworks
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_google_vertexai import VertexAI
 from langchain_mistralai.chat_models import ChatMistralAI
@@ -33,6 +34,7 @@ MODEL_LIST = [
 	"anthropic/claude-3-haiku-20240307",
 	"anthropic/claude-3-opus-20240229",
 	"anthropic/claude-3-sonnet-20240229",
+	"fireworks/dbrx-instruct",
 	"google/gemini-1.0-pro",
 	"google/gemini-1.5-pro-latest",		# langchain cannot use generativeainot the right name, perhaps still in preview mode?
 	"vertexai/gemini-1.5-pro-preview-0215",
@@ -106,6 +108,13 @@ def call_langchain_sdk(prompt: str, model: str):
 		)
 	elif provider == "mistral":
 		model = ChatMistralAI(model=model_name, temperature=model_temperature)
+	elif provider == "fireworks":
+		# TODO: this is an instruct model, so will likely need different prompt.
+		model = Fireworks(
+			model=f"accounts/fireworks/models/{model_name}",
+			base_url="https://api.fireworks.ai/inference/v1/completions",
+			temperature=model_temperature
+		)
 
 	prompt_template = build_prompt_template()
 	output_parser = StrOutputParser()

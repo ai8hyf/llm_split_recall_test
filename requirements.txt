@@ -5,3 +5,4 @@ langchain-google-genai
 langchain_openai
 langchain-mistralai
 langchain-google-vertexai
+langchain-fireworks
