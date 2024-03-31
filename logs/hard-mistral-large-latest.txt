@@ -1,0 +1,34 @@
+$ python split_and_recall.py --eval_task hard --model mistral/mistral-large-latest
+=== Hard task eval starts ===
+Document: https://aclanthology.org/2023.acl-long.41/
+Success rate:  7/7
+=== 1/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.310/
+Success rate:  10/10
+=== 2/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.656/
+Success rate:  6/6
+=== 3/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.506/
+Success rate:  16/8
+=== 4/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.243/
+Success rate:  8/8
+=== 5/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.883/
+Success rate:  6/6
+=== 6/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.555/
+Success rate:  9/9
+=== 7/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.810/
+Success rate:  6/8
+=== 8/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-short.60/
+Success rate:  6/6
+=== 9/10 documents processed ===
+Document: https://aclanthology.org/2023.acl-long.742/
+Success rate:  9/9
+=== 10/10 documents processed ===
+=== Hard task eval result: ===
+Total success rate:  83/77 = 1.077922077922078

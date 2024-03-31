@@ -1,2 +1,8 @@
 openai==1.14.3
 python-dotenv==1.0.1
+langchain-anthropic
+langchain-google-genai
+langchain_openai
+langchain-mistralai
+langchain-google-vertexai
+langchain-fireworks

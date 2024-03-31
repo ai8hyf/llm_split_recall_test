@@ -1,9 +1,20 @@
+#!/usr/bin/env python
+import argparse
 import os
 import json
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_anthropic import ChatAnthropic
+from langchain_fireworks import Fireworks
+from langchain_google_genai import GoogleGenerativeAI
+from langchain_google_vertexai import VertexAI
+from langchain_mistralai.chat_models import ChatMistralAI
+
+import time
 
 load_dotenv()
 
@@ -19,9 +30,22 @@ local_llm_model = "path_to_your_local_model" # if you want to use the local mode
 
 model_temperature = 0.2 # feel free to tweak this parameter
 
-# load eval_data.json from the same directory
-with open('eval_data.json', 'r') as f:
-	eval_data = json.load(f)
+MODEL_LIST = [
+	"anthropic/claude-3-haiku-20240307",
+	"anthropic/claude-3-opus-20240229",
+	"anthropic/claude-3-sonnet-20240229",
+	"fireworks/dbrx-instruct",
+	"google/gemini-1.0-pro",
+	"google/gemini-1.5-pro-latest",		# langchain cannot use generativeainot the right name, perhaps still in preview mode?
+	"vertexai/gemini-1.5-pro-preview-0215",
+	"mistral/mistral-large-latest",
+	"openai/gpt-3.5-turbo",
+	"openai/gpt-4-turbo",
+	"vllm/mistral-7b-instruct-v0.2",
+	"vllm/mistral-8x7b-instruct",
+]
+
+def load_eval_data(filename: str="eval_data.json") -> list[dict]:
 	# eval data structure:
 	# [
 	# 	{
@@ -37,6 +61,10 @@ with open('eval_data.json', 'r') as f:
 	# 1. I have manually cleaned and splitted the abstracts into sentences. 
 	# 2. The abstract in the full_text is also replaced with the cleaned sentences.
 	# 3. Currently, there are 10 documents (papers) in the eval_data.json. They are from ACL 2023.
+	with open(filename, 'r') as f:
+		eval_data = json.load(f)
+	
+	return eval_data
 
 def call_openai_api(prompt):
 	client = OpenAI(
@@ -54,6 +82,45 @@ def call_openai_api(prompt):
 	)
 	
 	return completion.choices[0].message.content
+
+def build_prompt_template() -> ChatPromptTemplate:
+	return ChatPromptTemplate.from_messages(
+		[
+			("system", "You are a helpful assistant."),
+			("user", "{prompt}"),
+		]
+	)
+
+def call_langchain_sdk(prompt: str, model: str):
+
+	provider, model_name = model.split('/', 1)
+
+	if provider == "anthropic":
+		model = ChatAnthropic(model=model_name, temperature=model_temperature)
+	elif provider == "google":
+		model = GoogleGenerativeAI(model=model_name, temperature=model_temperature)
+	elif provider == "vertexai":
+		model = VertexAI(
+			model=model_name,
+			project=os.getenv("GCP_PROJECT"),
+			location=os.getenv("GCP_LOCATION"),
+			temperature=model_temperature
+		)
+	elif provider == "mistral":
+		model = ChatMistralAI(model=model_name, temperature=model_temperature)
+	elif provider == "fireworks":
+		# TODO: this is an instruct model, so will likely need different prompt.
+		model = Fireworks(
+			model=f"accounts/fireworks/models/{model_name}",
+			base_url="https://api.fireworks.ai/inference/v1/completions",
+			temperature=model_temperature
+		)
+
+	prompt_template = build_prompt_template()
+	output_parser = StrOutputParser()
+	chain = prompt_template | model | output_parser
+
+	return chain.invoke({"prompt": prompt})
 
 def build_easy_task_instruction(sentences):
 	instruction = "Below is the abstract section from an academic paper.\n\n"
@@ -79,17 +146,25 @@ def build_hard_task_instruction(full_text, max_char):
 
 	return instruction
 
-def evaluate_easy_task():
+def evaluate_easy_task(*, eval_data: list[dict], model: str):
 	total_sentence_count = 0
 	total_correct_sentence_count = 0
 	total_document_count = len(eval_data)
 	processed_document_count = 0
 
 	print("=== Easy task eval starts ===")
+	print(f"model: {model}")
 
 	for doc in eval_data:
 		instruction = build_easy_task_instruction(doc['abstract_sentences'])
-		response = call_openai_api(instruction)
+
+		if model.split('/')[0] in ["openai", "vllm"]:
+			response = call_openai_api(instruction)
+		else:
+			response = call_langchain_sdk(instruction, model)
+			if model.split('/')[0] in ["vertexai"]:
+				time.sleep(12)
+
 		generated_sentences = response.split("\n")
 
 		total_sentence_count += len(doc['abstract_sentences'])
@@ -113,7 +188,7 @@ def evaluate_easy_task():
 	print("=== Easy task eval result: ===")
 	print("Total success rate: ", str(total_correct_sentence_count) + "/" + str(total_sentence_count) + " = " + str(total_correct_sentence_count / total_sentence_count))
 
-def evaluate_hard_task():
+def evaluate_hard_task(*, eval_data: list[dict], model: str):
 	total_sentence_count = 0
 	total_correct_sentence_count = 0
 	total_document_count = len(eval_data)
@@ -123,7 +198,12 @@ def evaluate_hard_task():
 
 	for doc in eval_data:
 		instruction = build_hard_task_instruction(doc['full_text'], hard_task_max_char)
-		response = call_openai_api(instruction)
+		
+		if model.split('/', 1)[0] in ["openai", "vllm"]:
+			response = call_openai_api(instruction)
+		else:
+			response = call_langchain_sdk(instruction, model)
+
 		generated_sentences = response.split("\n")
 
 		total_sentence_count += len(doc['abstract_sentences'])
@@ -147,7 +227,38 @@ def evaluate_hard_task():
 	print("=== Hard task eval result: ===")
 	print("Total success rate: ", str(total_correct_sentence_count) + "/" + str(total_sentence_count) + " = " + str(total_correct_sentence_count / total_sentence_count))
 
-if eval_task == "easy":
-	evaluate_easy_task()
-elif eval_task == "hard":
-	evaluate_hard_task()
+
+def main(args: argparse.Namespace):
+
+	eval_task = args.eval_task
+	model = args.model
+
+	eval_data = load_eval_data()
+
+	if eval_task == "easy":
+		evaluate_easy_task(eval_data=eval_data, model=model)
+	elif eval_task == "hard":
+		evaluate_hard_task(eval_data=eval_data, model=model)
+	else:
+		SystemExit("Invalid eval_task")
+
+
+def setup_parser():
+	parser = argparse.ArgumentParser(description='Split and Recall Evaluation')
+	parser.add_argument(
+		'--eval_task',
+		choices=['easy', 'hard'],
+		default='easy',
+		help='Evaluation task (easy or hard)'
+	)
+	parser.add_argument(
+		'--model',
+		choices=MODEL_LIST,
+		default='openai/gpt-4-turbo',
+		help='List of models in the form of inference-service-provider/model-name'
+	)
+	return parser.parse_args()
+
+if __name__ == "__main__":
+    args = setup_parser()
+    main(args)
