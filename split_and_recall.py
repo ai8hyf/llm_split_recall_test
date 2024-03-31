@@ -6,9 +6,14 @@ import json
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain_anthropic import ChatAnthropic
 from langchain_google_genai import GoogleGenerativeAI
+from langchain_google_vertexai import VertexAI
 from langchain_mistralai.chat_models import ChatMistralAI
+
+import time
 
 load_dotenv()
 
@@ -25,18 +30,18 @@ local_llm_model = "path_to_your_local_model" # if you want to use the local mode
 model_temperature = 0.2 # feel free to tweak this parameter
 
 MODEL_LIST = [
-	"anthropic/claude-3-haiku",
-	"anthropic/claude-3-opus",
-	"anthropic/claude-3-sonnet",
+	"anthropic/claude-3-haiku-20240307",
+	"anthropic/claude-3-opus-20240229",
+	"anthropic/claude-3-sonnet-20240229",
 	"google/gemini-1.0-pro",
-	"google/gemini-1.5-pro",
-	"mistral/mistral-large",
+	"google/gemini-1.5-pro-latest",		# langchain cannot use generativeainot the right name, perhaps still in preview mode?
+	"vertexai/gemini-1.5-pro-preview-0215",
+	"mistral/mistral-large-latest",
 	"openai/gpt-3.5-turbo",
 	"openai/gpt-4-turbo",
 	"vllm/mistral-7b-instruct-v0.2",
 	"vllm/mistral-8x7b-instruct",
 ]
-
 
 def load_eval_data(filename: str="eval_data.json") -> list[dict]:
 	# eval data structure:
@@ -76,31 +81,37 @@ def call_openai_api(prompt):
 	
 	return completion.choices[0].message.content
 
+def build_prompt_template() -> ChatPromptTemplate:
+	return ChatPromptTemplate.from_messages(
+		[
+			("system", "You are a helpful assistant."),
+			("user", "{prompt}"),
+		]
+	)
 
 def call_langchain_sdk(prompt: str, model: str):
 
-	provider, model_name = model.split('/')
+	provider, model_name = model.split('/', 1)
 
 	if provider == "anthropic":
-		model = ChatAnthropic(model=model_name)
+		model = ChatAnthropic(model=model_name, temperature=model_temperature)
 	elif provider == "google":
-		model = GoogleGenerativeAI(model=model_name)
+		model = GoogleGenerativeAI(model=model_name, temperature=model_temperature)
+	elif provider == "vertexai":
+		model = VertexAI(
+			model=model_name,
+			project=os.getenv("GCP_PROJECT"),
+			location=os.getenv("GCP_LOCATION"),
+			temperature=model_temperature
+		)
 	elif provider == "mistral":
-		model = ChatMistralAI(model=model_name)
+		model = ChatMistralAI(model=model_name, temperature=model_temperature)
 
+	prompt_template = build_prompt_template()
+	output_parser = StrOutputParser()
+	chain = prompt_template | model | output_parser
 
-	# completion = client.chat.completions.create(
-	# 	model= oai_model, # change to model=local_llm_model if you want to use the local model
-	# 	messages=[
-	# 		{"role": "system", "content": "You are a helpful assistant."}, # for mixtral models, you can comment out the system message
-	# 		{"role": "user", "content": prompt},
-	# 	],
-	# 	# max_tokens = 500, # you can uncomment this line if you want to limit the tokens
-	# 	temperature = model_temperature,
-	# )
-	
-	# return completion.choices[0].message.content
-	pass
+	return chain.invoke({"prompt": prompt})
 
 def build_easy_task_instruction(sentences):
 	instruction = "Below is the abstract section from an academic paper.\n\n"
@@ -133,6 +144,7 @@ def evaluate_easy_task(*, eval_data: list[dict], model: str):
 	processed_document_count = 0
 
 	print("=== Easy task eval starts ===")
+	print(f"model: {model}")
 
 	for doc in eval_data:
 		instruction = build_easy_task_instruction(doc['abstract_sentences'])
@@ -141,6 +153,8 @@ def evaluate_easy_task(*, eval_data: list[dict], model: str):
 			response = call_openai_api(instruction)
 		else:
 			response = call_langchain_sdk(instruction, model)
+			if model.split('/')[0] in ["vertexai"]:
+				time.sleep(12)
 
 		generated_sentences = response.split("\n")
 
@@ -176,7 +190,7 @@ def evaluate_hard_task(*, eval_data: list[dict], model: str):
 	for doc in eval_data:
 		instruction = build_hard_task_instruction(doc['full_text'], hard_task_max_char)
 		
-		if model.split('/')[0] in ["openai", "vllm"]:
+		if model.split('/', 1)[0] in ["openai", "vllm"]:
 			response = call_openai_api(instruction)
 		else:
 			response = call_langchain_sdk(instruction, model)
@@ -222,8 +236,18 @@ def main(args: argparse.Namespace):
 
 def setup_parser():
 	parser = argparse.ArgumentParser(description='Split and Recall Evaluation')
-	parser.add_argument('--eval_task', choices=['easy', 'hard'], default='easy', help='Evaluation task (easy or hard)')
-	parser.add_argument('--model', choices=MODEL_LIST, help='List of models in the form of inference-provider/model-name')
+	parser.add_argument(
+		'--eval_task',
+		choices=['easy', 'hard'],
+		default='easy',
+		help='Evaluation task (easy or hard)'
+	)
+	parser.add_argument(
+		'--model',
+		choices=MODEL_LIST,
+		default='openai/gpt-4-turbo',
+		help='List of models in the form of inference-service-provider/model-name'
+	)
 	return parser.parse_args()
 
 if __name__ == "__main__":
