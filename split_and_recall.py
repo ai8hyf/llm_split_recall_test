@@ -18,10 +18,8 @@ import time
 
 load_dotenv()
 
-
 eval_task = "easy" # or choose "hard" and provide the max_char parameter
 hard_task_max_char = 10000 # how many characters to provide to the model for the hard task
-
 oai_api_key = os.getenv("OPENAI_API_KEY") # if you want to use the openai api
 oai_model = "gpt-3.5-turbo" # if you want to use the openai api
 
@@ -146,7 +144,37 @@ def build_hard_task_instruction(full_text, max_char):
 
 	return instruction
 
-def evaluate_easy_task(*, eval_data: list[dict], model: str):
+def match_sentences(generated_sentences: str, target_sentences: list[str], debug_mode=False):
+	generated_sentences = generated_sentences.split("\n")
+	
+	total_correct_sentence_count = 0
+
+	target_sentences_set = set(target_sentences)
+
+	if debug_mode:
+		print("=== Target sentences： ===")
+		for i, sentence in enumerate(target_sentences):
+			print(f"{i+1}. {sentence}")
+		print("-----------------")
+
+	for sentence in generated_sentences:
+		sentence = sentence.strip()
+		if sentence.startswith("#"):
+			sentence = sentence[1:].strip()
+			if debug_mode:
+				print("### Generated sentence: ")
+				print(sentence)
+			if sentence in target_sentences_set:
+				total_correct_sentence_count += 1
+				if debug_mode:
+					print("### Match!")
+					print("-----------------")
+				# remove the matched sentence from the set
+				target_sentences_set.remove(sentence)
+
+	return total_correct_sentence_count
+
+def evaluate_easy_task(*, eval_data: list[dict], model: str, debug_mode: bool):
 	total_sentence_count = 0
 	total_correct_sentence_count = 0
 	total_document_count = len(eval_data)
@@ -165,21 +193,10 @@ def evaluate_easy_task(*, eval_data: list[dict], model: str):
 			if model.split('/')[0] in ["vertexai"]:
 				time.sleep(12)
 
-		generated_sentences = response.split("\n")
-
 		total_sentence_count += len(doc['abstract_sentences'])
-
-		document_correct_sentence_count = 0
-
+		document_correct_sentence_count = match_sentences(response, doc['abstract_sentences'], debug_mode=debug_mode)
+		total_correct_sentence_count += document_correct_sentence_count
 		processed_document_count += 1
-		
-		for sentence in generated_sentences:
-			sentence = sentence.strip()
-			if sentence.startswith("#"):
-				sentence = sentence[1:].strip()
-			if sentence in doc['abstract_sentences']:
-				total_correct_sentence_count += 1
-				document_correct_sentence_count += 1
 
 		print(f"Document: {doc['paper_url']}")
 		print("Success rate: ", str(document_correct_sentence_count) + "/" + str(len(doc['abstract_sentences'])))
@@ -188,7 +205,7 @@ def evaluate_easy_task(*, eval_data: list[dict], model: str):
 	print("=== Easy task eval result: ===")
 	print("Total success rate: ", str(total_correct_sentence_count) + "/" + str(total_sentence_count) + " = " + str(total_correct_sentence_count / total_sentence_count))
 
-def evaluate_hard_task(*, eval_data: list[dict], model: str):
+def evaluate_hard_task(*, eval_data: list[dict], model: str, debug_mode: bool):
 	total_sentence_count = 0
 	total_correct_sentence_count = 0
 	total_document_count = len(eval_data)
@@ -204,21 +221,10 @@ def evaluate_hard_task(*, eval_data: list[dict], model: str):
 		else:
 			response = call_langchain_sdk(instruction, model)
 
-		generated_sentences = response.split("\n")
-
 		total_sentence_count += len(doc['abstract_sentences'])
-
-		document_correct_sentence_count = 0
-
+		document_correct_sentence_count = match_sentences(response, doc['abstract_sentences'], debug_mode=debug_mode)
+		total_correct_sentence_count += document_correct_sentence_count
 		processed_document_count += 1
-		
-		for sentence in generated_sentences:
-			sentence = sentence.strip()
-			if sentence.startswith("#"):
-				sentence = sentence[1:].strip()
-			if sentence in doc['abstract_sentences']:
-				total_correct_sentence_count += 1
-				document_correct_sentence_count += 1
 
 		print(f"Document: {doc['paper_url']}")
 		print("Success rate: ", str(document_correct_sentence_count) + "/" + str(len(doc['abstract_sentences'])))
@@ -232,13 +238,14 @@ def main(args: argparse.Namespace):
 
 	eval_task = args.eval_task
 	model = args.model
+	debug_mode = args.debug_mode
 
 	eval_data = load_eval_data()
 
 	if eval_task == "easy":
-		evaluate_easy_task(eval_data=eval_data, model=model)
+		evaluate_easy_task(eval_data=eval_data, model=model, debug_mode=debug_mode)
 	elif eval_task == "hard":
-		evaluate_hard_task(eval_data=eval_data, model=model)
+		evaluate_hard_task(eval_data=eval_data, model=model, debug_mode=debug_mode)
 	else:
 		SystemExit("Invalid eval_task")
 
@@ -254,8 +261,13 @@ def setup_parser():
 	parser.add_argument(
 		'--model',
 		choices=MODEL_LIST,
-		default='openai/gpt-4-turbo',
+		default='openai/gpt-3.5-turbo',
 		help='List of models in the form of inference-service-provider/model-name'
+	)
+	parser.add_argument(
+		'--debug_mode',
+		action="store_true",
+		help='Whether to show debug information or not'
 	)
 	return parser.parse_args()
 
